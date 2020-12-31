@@ -10,7 +10,7 @@
 ![](crosstalk.gif)
 
   
-1: Embedding a microchart within a tootlip. Based on {highcharter}.  
+2: Embedding a microchart within a tootlip. Based on {highcharter}.  
  ![](highcharter.gif)
 
 
