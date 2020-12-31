@@ -6,10 +6,11 @@
 
 ### Screenshots:
 
+1: Using the avatar as a filter for tables and other charts. Based on {crosstalk}.
 ![](crosstalk.gif)
 
   
-  
+1: Embedding a microchart within a tootlip. Based on {highcharter}.  
  ![](highcharter.gif)
 
 
