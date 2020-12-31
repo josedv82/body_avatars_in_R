@@ -1,0 +1,472 @@
+---
+title: "Using body diagrams in Shiny Apps"
+output:
+  html_document:
+    toc: true
+    theme: united
+    code_folding: hide
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+author: "[Jose Fernandez](https://github.com/josedv82)"
+---
+
+<br />
+<br />
+
+# Introduction
+
+Integrating body diagrams (or body avatars) within athlete and teams reports is a common practice. For example, avatars are frequently used in [body soreness questionaires](https://content.sciendo.com/view/journals/hukin/69/1/article-p125.xml?language=en) as well by technology devices such as [this one](https://www.tmg-bodyevolution.com/2254-2/) or [this one](https://www.researchgate.net/figure/Screenshot-of-a-few-tabs-of-a-users-profile-of-Skulpt-showing-the-body-fat-percentage_fig5_327545611). 
+
+Given that open source reporting platforms such as R Shiny are gaining momentum in Sport Science, I thought it would be a good idea to highlight a few minimal examples on how to embed this type of visualizations within Shiny apps or markdown reports.
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(plotly)
+```
+
+<br />
+<br />
+
+# Getting the data
+
+Body diagrams use 2D shapes to represent different parts of the body. These shapes are built with polygons. Therefore, the first thing we will need is the x,y coordinates for each polygon in the figure we want to use. There are a few options to get this data, 1) do it manually, which is likely going to be really hard, 2) get the coordinates from a known source, for example a few years ago I created an avatar for powerBI, you can find find it [here](https://synoptic.design/). Go to ```gallery > body areas``` to open it. Option number 3) is the one I will expand on as it is the fastest.
+
+The avatar I want to use is actually uploaded on the internet. Since it is a .svg file I can scrape the website to find the coordinates for each polygon programmatically using ```{rvest}```. Example below:
+
+
+```{r message=FALSE, warning=FALSE}
+
+#get the website with the svg file
+    web <- paste0("http://svgur.com/i/7bP.svg")
+
+    #find the points
+    points <- xml2::read_html(web) %>%
+      rvest::html_nodes(xpath =  "//polygon") %>% #find the node with the polygons
+      rvest::html_attr('points') #get the coordinates for each polygon
+
+    #repeat to get ids (names) of the polygons
+    id <- xml2::read_html(web) %>%
+      rvest::html_nodes(xpath =  "//polygon") %>% #find the node with the polygons
+      rvest::html_attr("id") #get the ids
+
+    
+    #jong id + points into one dataset
+  svg <- dplyr::tibble(id, points) %>%
+    mutate(points = gsub("\\,", " ", points)) %>%
+    separate(points, into = c("x1", "y1", "x2", "y2", "x3", "y3", "x4", "y4", "x5", "y5", "x6", "y6", "x7", "y7", "x8", "y8", "x9", "y9", "x10", "y10")) %>%
+    pivot_longer(!id, names_to = "coord", values_to = "values") 
+    
+    
+ str(svg)
+
+
+```
+
+<br />
+<br />
+
+That returns a data frame with the id (muscle name), x coordinates and y coordinates. There is still a little bit of data cleaning involved after that which I've done manually as it is just one off. But the same could be done programmatically. Overall the next chunk provides the final datase to get the polygon's coordinates and a few other variables useful for filtering later.
+
+
+```{r}
+
+map <- read.csv("https://raw.githubusercontent.com/josedv82/body_avatars_in_R/main/svggmap.csv")
+
+mapa <- map %>%
+  mutate(coord = gsub('[0-9]+', '', coord)) %>%
+  na.omit() %>%
+  group_by(Id) %>%
+  mutate(y = lead(values)) %>%
+  filter(coord != "y") %>%
+  select(Id, View, Part, Group, Muscle, Side, x = values, y) 
+
+str(map)
+
+```
+
+<br />
+<br />
+
+# Static Avatars
+
+After that we can start plotting the avatars. Below is a basic example of what it looks like. 
+
+
+```{r message=FALSE, warning=FALSE}
+
+  mapa %>%
+
+  ggplot(aes(x = x, y = y, group = Id)) +
+  geom_polygon(color = "black", fill = "white") +
+  xlim(min(mapa$x), max(mapa$x)) + 
+  scale_y_reverse(limits=c(max(mapa$y), min(mapa$y)), expand=c(0.01,0.01)) +
+  theme_void() +
+  theme(legend.position = "none")
+  
+
+```
+
+<br />
+<br />
+
+Since we added a few more variables, we can easily filter in various ways, for example, show only lower body muscles.
+
+
+```{r fig.height=3, fig.width=7, message=FALSE, warning=FALSE}
+
+  mapa %>%
+  filter(Part == "Lower_Body") %>%
+
+  ggplot(aes(x = x, y = y, group = Id, fill = Group)) +
+  geom_polygon(color = "black") +
+  xlim(min(mapa$x), max(mapa$x)) + 
+  scale_y_reverse(limits=c(max(mapa$y), min(mapa$y)), expand=c(0.01,0.01)) +
+  theme_void()
+  
+
+```
+
+<br />
+<br />
+
+# Adding data from athletes
+
+Obviously the usefulness comes from using this chart to visualize athlete's data from different assessments. To do this I am going to create some dummy muscle data.
+
+
+```{r}
+
+Group = c("Groin", "Groin", 
+          "Arm", "Arm", 
+          "Arm", "Arm",
+          "Hamstrings", "Hamstrings", 
+          "Forearm", "Forearm", 
+          "Arm", "Arm",
+          "Arm", "Arm",
+          "Back", "Back",
+          "Forearm", "Forearm", 
+          "Forearm", "Forearm", 
+          "Forearm", "Forearm", 
+          "Calves", "Calves",
+          "Calves", "Calves",
+          "Gluteus", "Gluteus", 
+          "Knee", "Knee",
+          "Knee", "Knee",
+          "Back", "Back",
+          "Neck", "Neck",
+          "Abdominals", "Abdominals",
+          "Pectoralis", "Pectoralis",
+          "Lower Leg", "Lower Leg",
+          "Abdominals", "Abdominals",
+          "Quadriceps", "Quadriceps",
+          "Hamstrings", "Hamstrings", 
+          "Lower Leg", "Lower Leg",
+          "Calves", "Calves",
+          "Lower Leg", "Lower Leg",
+          "Back", "Back",
+          "Arm", "Arm",
+          "Arm", "Arm",
+          "Quadriceps", "Quadriceps",
+          "Quadriceps", "Quadriceps")
+
+Muscle = c("Adductor_Longus", "Adductor_Longus", 
+           "Biceps_Brachii_Long_Head", "Biceps_Brachii_Long_Head",
+           "Biceps_Brachii_Short_Head", "Biceps_Brachii_Short_Head",
+           "Biceps_Femoris", "Biceps_Femoris",
+           "Brachioradialis", "Brachioradialis",
+           "Deltoids_Back", "Deltoids_Back",
+           "Deltoids_Front", "Deltoids_Front",
+           "Erector_Spinae", "Erector_Spinae",
+           "Extensor_Digitorum", "Extensor_Digitorum",
+           "Flexor_Carpi", "Flexor_Carpi",
+           "Flexor_Digitorum", "Flexor_Digitorum",
+           "Gastroc_Lateralis", "Gastroc_Lateralis",
+           "Gastroc_Medialis", "Gastroc_Medialis",
+           "Gluteus_Max", "Gluteus_Max",
+           "Knee_Back", "Knee_Back",
+           "Knee_Front", "Knee_Front",
+           "Latissimus_Dorsi", "Latissimus_Dorsi",
+           "Neck", "Neck",
+           "Oblique", "Oblique",
+           "Pectoral_Mayoris", "Pectoral_Mayoris",
+           "Peroneus_Longus", "Peroneus_Longus",
+           "Rectus_Abdominis", "Rectus_Abdominis",
+           "Rectus_Femoris", "Rectus_Femoris",
+           "Semitendinosus", "Semitendinosus",
+           "Shin", "Shin",
+           "Soleus", "Soleus",
+           "Tibialis_Anterior", "Tibialis_Anterior",
+           "Trapezius", "Trapezius",
+           "Triceps_Lateral", "Triceps_Lateral",
+           "Triceps_Medial", "Triceps_Medial",
+           "Vastus_Lateralis", "Vastus_Lateralis",
+           "Vastus_Medialis", "Vastus_Medialis")
+
+Side = c("Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left","Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left", "Right", "Left")
+
+`x1` = runif(n = 64, min = 0, max = 5)
+`x2` = runif(n = 64, min = 0, max = 5)
+`x3` = runif(n = 64, min = 0, max = 5)
+`x4` = runif(n = 64, min = 0, max = 5)
+`x5` = runif(n = 64, min = 0, max = 5)
+`x6` = runif(n = 64, min = 0, max = 5)
+`x7` = runif(n = 64, min = 0, max = 5)
+`x8` = runif(n = 64, min = 0, max = 5)
+`x9` = runif(n = 64, min = 0, max = 5)
+`x10` = runif(n = 64, min = 0, max = 5)
+
+
+muscles_dat <- data.frame(Group, Muscle, Side, 
+                          `x1`,
+                          `x2`,
+                          `x3`,
+                          `x4`,
+                          `x5`,
+                          `x6`,
+                          `x7`,
+                          `x8`,
+                          `x9`,
+                          `x10`)
+
+```
+
+<br />
+<br />
+
+Now we can join our polygon data with the results from our dummy dataset. Below I created two datasets.
+
+
+```{r message=FALSE, warning=FALSE}
+
+#all muscle groups
+
+full <- full_join(mapa, muscles_dat, by = c("Group", "Muscle", "Side")) %>%
+  pivot_longer(!Id:y, names_to = "Date", values_to = "Values") %>% 
+  mutate(Date = as.numeric(gsub("[^0-9.-]", "", Date)))
+
+# only a few muscle groups
+full2 <- muscles_dat %>% 
+  filter(Group %in%  c("Gluteus", "Hamstrings", "Lower Leg", "Groin")) %>%
+  full_join(mapa, by = c("Group", "Muscle", "Side")) %>%
+  select(Id, View, Part, Group, Muscle, Side, x, y, everything()) %>%
+  pivot_longer(!Id:y, names_to = "Date", values_to = "Values") %>% 
+  mutate(Date = as.numeric(gsub("[^0-9.-]", "", Date)))
+
+```
+
+<br />
+<br />
+
+And then, we can start using the results from our assessments to color the polygons. For example:
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+ggplot(data = full, aes(x = x, y = y, group = Id, fill = Values)) +
+  geom_polygon(color = "black") +
+  xlim(min(full$x), max(full$x)) + 
+  scale_y_reverse(limits=c(max(full$y), min(full$y)), expand=c(0.01,0.01)) +
+  scale_fill_gradient(low="blue", high="red") +
+  facet_wrap(~Date, ncol = 5) +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "gray", color = "transparent"),
+        strip.background = element_rect(fill = "black"),
+        strip.text = element_text(color = "white", size = 14))
+
+
+```
+
+<br />
+<br />
+
+Very likely we won't have data for all those muscle groups but just a few common ones. If a muscle has no data it won't be colored.
+
+
+```{r fig.height=5, fig.width=15, message=FALSE, warning=FALSE}
+
+ggplot(data = full2, aes(x = x, y = y, group = Id, fill = Values)) +
+  geom_polygon(color = "black") +
+  xlim(min(full$x), max(full$x)) + 
+  scale_y_reverse(limits=c(max(full$y), min(full$y)), expand=c(0.01,0.01)) +
+  scale_fill_gradient(low="blue", high="red") +
+  facet_wrap(~Date, ncol = 5) +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "gray", color = "transparent"),
+        strip.background = element_rect(fill = "black"),
+        strip.text = element_text(color = "white", size = 14))
+
+
+```
+
+<br />
+<br />
+
+# Interactive Visualizations
+
+We've seen how simple it is to visualize static avatars. However, one of the strength of using shiny or markdown is the interactivity. Let's make out avatars interactive. Starting with a simple plotly showing a tooltip when hovering over a muscle.
+
+```{r message=FALSE, warning=FALSE}
+
+dat <- full %>%
+  filter(Date == "10") %>%
+  mutate(Values = round(Values, 2))
+
+
+plot <- ggplot(data = dat, aes(x = x, y = y, group = Id, fill = Values)) +
+  geom_polygon(aes(text = paste("Group: ", Group, "<br>", "Part: ", Part, "<br>", "Muscle: ", Muscle, "<br>", "Side: ", Side, "<br>", "Value: ", Values)), color = "black") +
+  xlim(min(mapa$x), max(mapa$x)) + 
+  scale_y_reverse(limits=c(max(mapa$y), min(mapa$y)), expand=c(0.01,0.01)) +
+  scale_fill_gradient(low="red", high="green") +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "gray", color = "transparent"),
+        strip.background = element_rect(fill = "black"),
+        strip.text = element_text(color = "white", size = 12))
+
+ggplotly(plot, tooltip = "text")
+
+```
+
+<br />
+<br />
+
+We could take a bit further an add an animation. For example the code below adds a slider to let users navigate through the different assessments.
+
+```{r message=FALSE, warning=FALSE}
+
+
+plot <- ggplot(data = full, aes(x = x, y = y, group = Id, fill = Values)) +
+  geom_polygon(aes(frame = Date), color = "black") +
+  xlim(min(full$x), max(full$x)) + 
+  scale_y_reverse(limits=c(max(full$y), min(full$y)), expand=c(0.01,0.01)) +
+  scale_fill_gradient(low="blue", high="red") +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "gray", color = "transparent"))
+
+plot <- ggplotly(plot) %>% animation_opts(transition = 1, easing = "elastic-in")
+
+plot
+```
+
+<br />
+<br />
+
+There are even more interesting ways to use tooltips, for example, ```{highcharter}``` is a very powerful library that let us embbed a micro chart within a tooltip, which can be very useful to visually the current status of a muscle (or muscle group) and its longitudinal trend. 
+
+
+```{r message=FALSE, warning=FALSE}
+
+
+library(highcharter)
+
+muscle <- full %>%
+  mutate(Date = as.numeric(Date)) %>%
+  mutate(Values = round(Values, 2))
+
+muscle2 <- full %>%
+  mutate(Date = as.numeric(Date)) %>%
+  select(Id, Date, Values) %>%
+  nest(-Id) %>%
+  mutate(
+    ttdata = 
+    data %>%
+    map(mutate_mapping, hcaes(x = Date, y = Values), drop = T) %>%
+    map(list_parse)
+    ) %>%
+  select(-data)
+
+gptot <- left_join(muscle, muscle2)
+
+hchart(gptot, "polygon", hcaes(x, y, group = Id, name = Muscle, value = Values)) %>% 
+  hc_yAxis(reversed = T) %>%
+  hc_tooltip(
+    useHTML = TRUE,
+    headerFormat = "<b>{point.key}</b>",
+    pointFormatter = tooltip_chart(accesor = "ttdata",
+                                   hc_opts = list(
+                                   chart = list(type = "spline"),
+                                   yAxis = list(title = list(text = "Value")),
+                                   xAxis = list(title = list(text = "Date"))
+                                   ))) %>%
+    hc_add_theme(hc_theme_null()) %>%
+    hc_legend(enabled = F)
+
+```
+
+*For more on ```{highcharter}``` check Tom Bishop's [cookbook](https://www.tmbish.me/lab/highcharter-cookbook/#getting-the-data) as it is a really good resource.*
+
+<br />
+<br />
+
+Taking advantage or libraries such as ```{crosstalk}``` we can also use an avatar as a filter (or input) to control other charts or create a dynamic dashboard. If you click any of the muscle groups below, it will update the other two charts.
+
+```{r message=FALSE, warning=FALSE}
+
+library(crosstalk)
+
+full <- full %>% mutate(Date = as.numeric(Date), Values = round(Values,2))
+
+data_ct <- SharedData$new(full, key = ~Id)
+
+#body diagram
+plot <- ggplot(data = data_ct, aes(x = x, y = y, group = Id), fill = "black") +
+  geom_polygon(aes(text = paste("Group: ", Group, "<br>", "Muscle: ", Muscle, "<br>", "Side: ", Side)), color = "white") +
+  scale_y_reverse() +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "transparent", color = "transparent"),
+        panel.border = element_blank(),
+        plot.background = element_blank())
+
+plot <- ggplotly(plot, tooltip = "text")
+plot <- highlight(plot, on = "plotly_click", color = "red", dynamic = F)
+
+#line graph
+plot2 <- ggplot(data = data_ct, aes(x = Date, y = Values, group = Id), fill = "black") +
+  geom_line(color = "transparent") +
+  geom_point(aes(text = paste("Value: ", Values)), color = "transparent") +
+  theme_void() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "transparent", color = "transparent"),
+        panel.border = element_blank(),
+        plot.background = element_blank())
+
+plot2 <- ggplotly(plot2, tooltip = "text")
+plot2 <- highlight(plot2, on = "plotly_click", color = "red", dynamic = F)
+
+#data table
+tab <- DT::datatable(data_ct,
+                     rownames= FALSE,
+                     options = list(dom = 't',
+                                    columnDefs = list(list(visible=FALSE, targets=c(0, 6, 7)),
+                                                      list(className = 'dt-center', targets = 0:9))))
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+bscols(plot, plot2)
+tab
+```
+
+<br />
+<br />
+
+# Notes
+
+While brief, I hope this was useful to highlight some ideas in which avatars can be integrated within our apps. I limited this example to just a static Rmarkdown Obviously, more could be done in Shiny given the many options it offers to add customization and interactivity to our dashboards.
+
+Jose Fernandez
+
+
+
+
+
+
+
+
+
+
