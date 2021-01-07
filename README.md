@@ -18,4 +18,4 @@
 
 <img src="https://github.com/josedv82/bodygramR/blob/master/man/images/bodygramRlogo.png" align="left" width="200" />
 
-I created a small R package that provides raw x/y data and functions to plot different body diagram visualizations. You can check it out [here](https://github.com/josedv82/bodygramR/blob/master/README.md). 
+I created a small R package that provides raw x/y data and functions to plot different body diagram visualizations. You can check it out [here](https://github.com/josedv82/bdgramR/blob/master/README.md). 
